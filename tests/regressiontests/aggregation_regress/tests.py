@@ -863,3 +863,35 @@ class AggregationTests(TestCase):
             ['Peter Norvig'],
             lambda b: b.name
         )
+
+    def test_aggregate_duplicate_columns(self):
+        # Regression test for #17144
+
+        results = Author.objects.annotate(num_contacts=Count('book_contact_set'))
+
+        # There should only be one GROUP BY clause, for the `id` column.
+        # `name` and `age` should not be grouped on.
+        grouping, gb_params = results.query.get_compiler(using='default').get_grouping()
+        self.assertEqual(len(grouping), 1)
+        assert 'id' in grouping[0]
+        assert 'name' not in grouping[0]
+        assert 'age' not in grouping[0]
+
+        # The query group_by property should also only show the `id`.
+        self.assertEqual(results.query.group_by, [('aggregation_regress', 'id')])
+
+        # Ensure that we get correct results.
+        self.assertEqual(
+            [(a.name, a.num_contacts) for a in results.order_by('name')],
+            [
+                ('Adrian Holovaty', 1),
+                ('Brad Dayley', 1),
+                ('Jacob Kaplan-Moss', 0),
+                ('James Bennett', 1),
+                ('Jeffrey Forcier', 1),
+                ('Paul Bissex', 0),
+                ('Peter Norvig', 2),
+                ('Stuart Russell', 0),
+                ('Wesley J. Chun', 0),
+            ]
+        )
